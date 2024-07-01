@@ -226,39 +226,51 @@ python -m pip uninstall -y torch torchvision torchaudio intel-extension-for-pyto
 python -m pip install cmake make ninja
 if [ $((${MODE} & 0x04)) -ne 0 ]; then
     python -m pip install Pillow
-    conda install -y libpng libjpeg-turbo -c conda-forge
+   #python -m pip install libpng libjpeg-turbo #Some issues pulling this packages down.
 fi
 
 ABI=1
 
-# don't fail on external scripts
+# Set up environment variables, adjust paths as needed
 source ${DPCPP_ENV}
 source ${ONEMKL_ENV}
 source ${CCL_ENV}
 source ${MPI_ENV}
 
-#  PyTorch
+#  PyTorch setup
 cd pytorch
 git apply ../intel-extension-for-pytorch/torch_patches/*.patch
 python -m pip install -r requirements.txt
-conda install --force-reinstall intel::mkl-static intel::mkl-include -y
+
+# Install Intel MKL and related packages
+python -m pip install mkl-static mkl-include
+
+# Set environment variables for PyTorch build
 export PYTORCH_BUILD_VERSION=${VERSION_TORCH}
 export PYTORCH_BUILD_NUMBER=0
-# Ensure cmake can find python packages when using conda or virtualenv
+
+# Set CMAKE_PREFIX_PATH based on environment (conda or virtualenv)
 if [ -n "${CONDA_PREFIX-}" ]; then
     export CMAKE_PREFIX_PATH=${CONDA_PREFIX:-"$(dirname $(command -v conda))/../"}
 elif [ -n "${VIRTUAL_ENV-}" ]; then
     export CMAKE_PREFIX_PATH=${VIRTUAL_ENV:-"$(dirname $(command -v python))/../"}
 fi
+
 export USE_STATIC_MKL=1
 export _GLIBCXX_USE_CXX11_ABI=${ABI}
 export USE_NUMA=0
 export USE_CUDA=0
+
+# Clean previous build
 python setup.py clean
 if [ -d dist ]; then
     rm -rf dist
 fi
+
+# Build PyTorch wheel
 python setup.py bdist_wheel 2>&1 | tee build.log
+
+# Unset environment variables after build
 unset USE_CUDA
 unset USE_NUMA
 unset _GLIBCXX_USE_CXX11_ABI
@@ -266,7 +278,11 @@ unset USE_STATIC_MKL
 unset CMAKE_PREFIX_PATH
 unset PYTORCH_BUILD_NUMBER
 unset PYTORCH_BUILD_VERSION
-conda remove mkl-static mkl-include -y
+
+# Remove temporary Intel MKL packages
+python -m pip uninstall mkl-static mkl-include -y
+
+# Install the built PyTorch wheel
 python -m pip install dist/*.whl
 cd ..
 #  TorchVision
